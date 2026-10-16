@@ -49,6 +49,7 @@ TCMODULES += m_ctinfo.o
 TCMODULES += m_bpf.o
 TCMODULES += m_tunnel_key.o
 TCMODULES += m_sample.o
+TCMODULES += m_psp.o
 TCMODULES += m_ct.o
 TCMODULES += m_gate.o
 TCMODULES += p_ip.o

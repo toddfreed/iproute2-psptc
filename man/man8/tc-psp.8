@@ -1,0 +1,90 @@
+.TH "PSP action in tc" 8 "9 Nov 2026" "iproute2" "Linux"
+
+.SH NAME
+psp - PSP transport mode action
+.SH SYNOPSIS
+.in +8
+.ti -8
+.BR tc " ... " "action psp" " { "
+.BI "encap assoc" " ASSOC_ID"
+.RB " | " decap " } [ "
+.IR CONTROL " ] [ "
+.BI index " INDEX"
+.RB " ]"
+
+.ti -8
+.IR CONTROL " := { "
+.BR reclassify " | " pipe " | " drop " | " continue " | " pass " | " goto " " chain " " CHAIN_INDEX " }"
+.SH DESCRIPTION
+The
+.B psp
+action applies PSP (PSP Security Protocol) encapsulation to packets using keys from the PSP netlink
+family: Rx SPIs and their keys from rx-spi-alloc, and Tx associations from assoc-add (assoc-get,
+assoc-del). The PSP device encrypts and decrypts the packets.
+.SH OPTIONS
+.TP
+.BI "encap assoc" " ASSOC_ID"
+Attach the Tx association
+.IR ASSOC_ID ,
+created with the PSP netlink
+.B assoc-add
+command, to the packet. The packet must then be transmitted on the netdev of
+the association's PSP device, which encrypts it: encap on that netdev's egress,
+or on another netdev's egress followed by a redirect to it
+.RB ( "mirred egress redirect" ).
+If it reaches another device the packet is dropped. In software, encap runs on
+egress only: encap on ingress is hardware offload only
+.RB ( skip_sw ),
+and in software the action drops the packet.
+.TP
+.B decap
+Remove the PSP Rx state of a packet which the PSP device decrypted, so that
+it can be forwarded. It takes no association. To take only the packets
+corresponding to one rx-spi-alloc, match packets with the
+.BR flower " keys " psp_spi ", " psp_ver " and " psp_dev .
+.IP
+An SPI from
+.B rx-spi-alloc
+is valid until the PSP device's key has been rotated twice. After that, the
+device can allocate the same SPI value again, and a rule which still matches it
+takes the packets of the new allocation. Delete such rules before the second
+key rotation after the allocation; the PSP netlink family notifies each key
+rotation
+.RB ( key-rotate-ntf ).
+.TP
+.I CONTROL
+How to continue after this action, see
+.BR tc-actions (8).
+The default is
+.BR pipe .
+.TP
+.BI index " INDEX"
+Use the action of index
+.IR INDEX ,
+to create it, or to reference an existing one.
+.SH EXAMPLES
+Encrypt the packets to 2001:db8::2 with Tx association 3, of the PSP device
+of eth0:
+
+.RS
+.EX
+tc filter add dev eth0 egress protocol ipv6 flower dst_ip 2001:db8::2 \\
+	action psp encap assoc 3
+.EE
+.RE
+
+Take the packets which eth0's PSP device (ID 1) decrypted with an SPI from
+rx-spi-alloc, and remove their PSP state:
+
+.RS
+.EX
+tc filter add dev eth0 ingress protocol ipv6 flower \\
+	psp_spi 0x80000001 psp_ver 0 psp_dev 1 \\
+	action psp decap
+.EE
+.RE
+.SH SEE ALSO
+.BR tc (8),
+.BR tc-actions (8),
+.BR tc-flower (8),
+.BR tc-mirred (8)
