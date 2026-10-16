@@ -8,9 +8,15 @@ psp - PSP transport mode action
 .BR tc " ... " "action psp" " { "
 .BI "encap assoc" " ASSOC_ID"
 .RB " | " decap " } [ "
+.BI mode " MODE"
+.RB " ] [ "
 .IR CONTROL " ] [ "
 .BI index " INDEX"
 .RB " ]"
+
+.ti -8
+.IR MODE " := { "
+.BR transport " | " tunnel " }"
 
 .ti -8
 .IR CONTROL " := { "
@@ -52,6 +58,19 @@ key rotation after the allocation; the PSP netlink family notifies each key
 rotation
 .RB ( key-rotate-ntf ).
 .TP
+.BI mode " MODE"
+.B transport
+(the default) puts the UDP and PSP headers between the packet's IP header and
+its payload, and the device encrypts the payload.
+.B tunnel
+encrypts the whole IP packet behind new outer IPv6 or IPv4, UDP and PSP
+headers: encap takes their addresses from a preceding
+.B tunnel_key set
+action, and decap removes them. Tunnel mode is only implemented as hardware
+offload
+.RB ( skip_sw );
+in software, the action drops the packet.
+.TP
 .I CONTROL
 How to continue after this action, see
 .BR tc-actions (8).
@@ -63,8 +82,8 @@ Use the action of index
 .IR INDEX ,
 to create it, or to reference an existing one.
 .SH EXAMPLES
-Encrypt the packets to 2001:db8::2 with Tx association 3, of the PSP device
-of eth0:
+Encrypt the packets to 2001:db8::2 in transport mode, the default, with Tx
+association 3, of the PSP device of eth0:
 
 .RS
 .EX
@@ -73,8 +92,8 @@ tc filter add dev eth0 egress protocol ipv6 flower dst_ip 2001:db8::2 \\
 .EE
 .RE
 
-Take the packets which eth0's PSP device (ID 1) decrypted with an SPI from
-rx-spi-alloc, and remove their PSP state:
+Take the transport mode packets which eth0's PSP device (ID 1) decrypted with
+an SPI from rx-spi-alloc, and remove their PSP state:
 
 .RS
 .EX
@@ -83,8 +102,33 @@ tc filter add dev eth0 ingress protocol ipv6 flower \\
 	action psp decap
 .EE
 .RE
+
+In switchdev mode, carry the IPv4 traffic of a VF, through its representor
+rep0, in a PSP tunnel between 2001:db8::1 and 2001:db8::2 with Tx
+association 3, of the PSP device of the uplink eth0. Then deliver what
+eth0's PSP device (ID 1) decrypted with an SPI from rx-spi-alloc to the VF,
+whose MAC address is 02:00:00:00:00:01. Both rules are offloaded:
+
+.RS
+.EX
+tc filter add dev rep0 ingress protocol ip flower skip_sw \\
+	action tunnel_key set src_ip 2001:db8::1 dst_ip 2001:db8::2 \\
+		dst_port 1000 \\
+	action psp encap assoc 3 mode tunnel \\
+	action mirred egress redirect dev eth0
+
+tc filter add dev eth0 ingress protocol ipv6 flower skip_sw \\
+	dst_ip 2001:db8::1 ip_proto udp dst_port 1000 \\
+	psp_spi 0x80000001 psp_ver 0 psp_dev 1 \\
+	action psp decap mode tunnel \\
+	action vlan push_eth dst_mac 02:00:00:00:00:01 \\
+		src_mac 02:00:00:00:00:fe \\
+	action mirred egress redirect dev rep0
+.EE
+.RE
 .SH SEE ALSO
 .BR tc (8),
 .BR tc-actions (8),
 .BR tc-flower (8),
-.BR tc-mirred (8)
+.BR tc-mirred (8),
+.BR tc-tunnel_key (8)

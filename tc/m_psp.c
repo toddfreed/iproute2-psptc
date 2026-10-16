@@ -12,12 +12,16 @@
 static void explain(void)
 {
 	fprintf(stderr,
-		"Usage: psp encap assoc ASSOC_ID [CONTROL] [index INDEX]\n"
-		"       psp decap [CONTROL] [index INDEX]\n"
+		"Usage: psp encap assoc ASSOC_ID [mode MODE] [CONTROL] [index INDEX]\n"
+		"       psp decap [mode MODE] [CONTROL] [index INDEX]\n"
 		"where:\n"
 		"\tASSOC_ID := ID of a Tx association, from PSP netlink assoc-add\n"
 		"\tdecap takes no association: match the packets with flower\n"
 		"\tpsp_spi, psp_ver and psp_dev\n"
+		"\tMODE := transport (default) | tunnel\n"
+		"\t        tunnel: encap takes the outer addresses from a\n"
+		"\t        preceding \"tunnel_key set\", decap removes the outer\n"
+		"\t        headers; hardware offload (skip_sw) only\n"
 		"\tCONTROL := reclassify | pipe | drop | continue | pass |\n"
 		"\t           goto chain <CHAIN_INDEX>\n");
 }
@@ -44,6 +48,7 @@ static int parse_psp(const struct action_util *a, int *argc_p, char ***argv_p,
 	struct tc_psp p = { 0 };
 	bool assoc_set = false;
 	__u32 action = 0;
+	int mode = -1;
 	char **argv = *argv_p;
 	struct rtattr *tail;
 	int argc = *argc_p;
@@ -67,6 +72,16 @@ static int parse_psp(const struct action_util *a, int *argc_p, char ***argv_p,
 				return -1;
 			}
 			assoc_set = true;
+		} else if (matches(*argv, "mode") == 0) {
+			NEXT_ARG();
+			if (strcmp(*argv, "transport") == 0) {
+				mode = TCA_PSP_MODE_TRANSPORT;
+			} else if (strcmp(*argv, "tunnel") == 0) {
+				mode = TCA_PSP_MODE_TUNNEL;
+			} else {
+				fprintf(stderr, "psp: Illegal \"mode\"\n");
+				return -1;
+			}
 		} else if (matches(*argv, "help") == 0) {
 			usage();
 		} else {
@@ -103,6 +118,8 @@ static int parse_psp(const struct action_util *a, int *argc_p, char ***argv_p,
 		addattr32(n, MAX_MSG, TCA_PSP_ACTION, action);
 	if (assoc_set)
 		addattr32(n, MAX_MSG, TCA_PSP_ASSOC_ID, assoc);
+	if (mode >= 0)
+		addattr8(n, MAX_MSG, TCA_PSP_MODE, mode);
 	addattr_nest_end(n, tail);
 
 	*argc_p = argc;
@@ -142,6 +159,21 @@ static int print_psp(const struct action_util *au, FILE *f, struct rtattr *arg)
 	if (tb[TCA_PSP_ASSOC_ID])
 		print_uint(PRINT_ANY, "assoc", " assoc %u",
 			   rta_getattr_u32(tb[TCA_PSP_ASSOC_ID]));
+	if (tb[TCA_PSP_MODE]) {
+		__u8 mode = rta_getattr_u8(tb[TCA_PSP_MODE]);
+
+		/* transport is the default: in JSON only */
+		switch (mode) {
+		case TCA_PSP_MODE_TRANSPORT:
+			print_string(PRINT_JSON, "mode", NULL, "transport");
+			break;
+		case TCA_PSP_MODE_TUNNEL:
+			print_string(PRINT_ANY, "mode", " mode %s", "tunnel");
+			break;
+		default:
+			print_uint(PRINT_ANY, "mode", " mode %u", mode);
+		}
+	}
 
 	print_action_control(" ", p->action, "");
 
