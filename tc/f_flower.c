@@ -73,6 +73,9 @@ static void explain(void)
 		"			mpls_bos BOS |\n"
 		"			mpls_ttl TTL |\n"
 		"			spi SPI-INDEX  |\n"
+		"			psp_spi SPI[/MASK] |\n"
+		"			psp_ver VERSION |\n"
+		"			psp_dev PSP-DEV-ID |\n"
 		"			l2tpv3_sid LSID |\n"
 		"			dst_ip PREFIX |\n"
 		"			src_ip PREFIX |\n"
@@ -676,6 +679,25 @@ static int flower_parse_icmp(char *str, __u16 eth_type, __u8 ip_proto,
 		return -1;
 
 	return flower_parse_u8(str, value_type, mask_type, NULL, NULL, n);
+}
+
+static int flower_parse_psp_spi(char *str, struct nlmsghdr *n)
+{
+	__u32 spi, mask = UINT32_MAX;
+	char *slash;
+
+	slash = strchr(str, '/');
+	if (slash) {
+		*slash = '\0';
+		if (get_u32(&mask, slash + 1, 16))
+			return -1;
+	}
+	if (get_u32(&spi, str, 16))
+		return -1;
+
+	addattr32(n, MAX_MSG, TCA_FLOWER_KEY_PSP_SPI, htonl(spi));
+	addattr32(n, MAX_MSG, TCA_FLOWER_KEY_PSP_SPI_MASK, htonl(mask));
+	return 0;
 }
 
 static int flower_parse_spi(char *str, __u8 ip_proto, struct nlmsghdr *n)
@@ -2074,6 +2096,31 @@ static int flower_parse_opt(const struct filter_util *qu, char *handle,
 			ret = flower_parse_l2tpv3(*argv, ip_proto, n);
 			if (ret < 0)
 				return -1;
+		} else if (!strcmp(*argv, "psp_spi")) {
+			NEXT_ARG();
+			ret = flower_parse_psp_spi(*argv, n);
+			if (ret < 0) {
+				fprintf(stderr, "Illegal \"psp_spi\"\n");
+				return -1;
+			}
+		} else if (!strcmp(*argv, "psp_ver")) {
+			__u8 ver;
+
+			NEXT_ARG();
+			if (get_u8(&ver, *argv, 0)) {
+				fprintf(stderr, "Illegal \"psp_ver\"\n");
+				return -1;
+			}
+			addattr8(n, MAX_MSG, TCA_FLOWER_KEY_PSP_VERSION, ver);
+		} else if (!strcmp(*argv, "psp_dev")) {
+			__u32 dev;
+
+			NEXT_ARG();
+			if (get_u32(&dev, *argv, 0)) {
+				fprintf(stderr, "Illegal \"psp_dev\"\n");
+				return -1;
+			}
+			addattr32(n, MAX_MSG, TCA_FLOWER_KEY_PSP_DEV, dev);
 		} else if (!strcmp(*argv, "spi")) {
 			NEXT_ARG();
 			ret = flower_parse_spi(*argv, ip_proto, n);
@@ -3234,6 +3281,30 @@ static int flower_print_opt(const struct filter_util *qu, FILE *f,
 		print_nl();
 		print_hex(PRINT_ANY, "spi", "  spi 0x%x",
 			   rta_getattr_be32(attr));
+	}
+
+	if (tb[TCA_FLOWER_KEY_PSP_SPI]) {
+		__u32 mask = UINT32_MAX;
+
+		if (tb[TCA_FLOWER_KEY_PSP_SPI_MASK])
+			mask = rta_getattr_be32(tb[TCA_FLOWER_KEY_PSP_SPI_MASK]);
+		print_nl();
+		print_hex(PRINT_ANY, "psp_spi", "  psp_spi 0x%x",
+			  rta_getattr_be32(tb[TCA_FLOWER_KEY_PSP_SPI]));
+		if (mask != UINT32_MAX)
+			print_hex(PRINT_ANY, "psp_spi_mask", "/0x%x", mask);
+	}
+
+	if (tb[TCA_FLOWER_KEY_PSP_VERSION]) {
+		print_nl();
+		print_uint(PRINT_ANY, "psp_ver", "  psp_ver %u",
+			   rta_getattr_u8(tb[TCA_FLOWER_KEY_PSP_VERSION]));
+	}
+
+	if (tb[TCA_FLOWER_KEY_PSP_DEV]) {
+		print_nl();
+		print_uint(PRINT_ANY, "psp_dev", "  psp_dev %u",
+			   rta_getattr_u32(tb[TCA_FLOWER_KEY_PSP_DEV]));
 	}
 
 	flower_print_ip4_addr("arp_sip", tb[TCA_FLOWER_KEY_ARP_SIP],

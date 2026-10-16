@@ -56,6 +56,12 @@ flower \- flow based traffic control filter
 .IR TTL " | "
 .B l2tpv3_sid
 .IR LSID " | "
+.B psp_spi
+.IR SPI "[/" MASK "] | "
+.B psp_ver
+.IR VERSION " | "
+.B psp_dev
+.IR PSP_DEV_ID " | "
 .BR ip_proto " { " tcp " | " udp " | " sctp " | " icmp " | " icmpv6 " | " l2tp " | "
 .IR IP_PROTO " } | "
 .B ip_tos
@@ -322,6 +328,29 @@ is an unsigned 8 bit value in decimal format.
 Match on L2TPv3 session id field transported over IPv4 or IPv6.
 .I LSID
 is an unsigned 32 bit value in decimal format.
+.TP
+.BI psp_spi " SPI[/MASK]"
+Match on the SPI which a PSP device decrypted the packet with.
+.I SPI
+and
+.I MASK
+are unsigned 32 bit values in hexadecimal format.
+.TP
+.BI psp_ver " VERSION"
+Match on the PSP version which the packet was decrypted with, as numbered
+by the PSP netlink family (0 for hdr0-aes-gcm-128, 1 for hdr0-aes-gcm-256,
+2 for hdr0-aes-gmac-128, 3 for hdr0-aes-gmac-256).
+.TP
+.BI psp_dev " PSP_DEV_ID"
+Match on the ID of the PSP device which decrypted the packet, from the PSP
+netlink family.
+.IP
+The PSP keys only ever match packets which a PSP device decrypted, even with
+a zero mask:
+.B psp_spi 0/0
+matches any packet decrypted with PSP. See
+.BR tc-psp (8)
+for an example.
 .TP
 .BI ip_proto " IP_PROTO"
 Match on layer four protocol.
